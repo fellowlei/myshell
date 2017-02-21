@@ -1,0 +1,347 @@
+sw
+openresty-1.9.7.4.tar.gz
+ubuntu16.01
+
+
+(本文下载的是openresty-1.9.7.4.tar.gz )
+wget https://openresty.org/download/openresty-1.9.7.4.tar.gz
+
+安装相关依赖包
+$ apt-get install libreadline-dev libncurses5-dev libpcre3-dev libssl-dev perl make build-essential
+
+安装
+$ tar -zxvf openresty-1.9.7.4.tar.gz
+$ cd openresty-1.9.7.4
+$ ./configure --prefix=/usr/local/openresty\    //安装到/usr/local/openresty
+             --with-luajit\               //激活luajit
+             --with-http_iconv_module     //激活http_iconv_module
+$ make
+$ make install
+
+
+
+
+
+
+============================================================
+nginx+lua项目构建
+http://jinnianshilongnian.iteye.com/blog/2186270
+
+nginx+lua项目构建
+/app/example
+项目目录结构如下所示：
+example
+    example.conf     ---该项目的nginx 配置文件
+    lua              ---我们自己的lua代码
+      test.lua
+
+1. /usr/local/openresty/nginx/conf/nginx.conf配置文件如下(此处我们最小化了配置文件)
+----nginx.conf
+#user  nobody;
+worker_processes  1;
+error_log  logs/error.log;
+pid        logs/nginx.pid;
+events {
+    worker_connections  1024;
+}
+
+http {
+    include       mime.types;
+    default_type  application/octet-stream;
+
+    lua_package_path "/usr/local/openresty/lualib/?.lua;;";  #lua 模块
+    lua_package_cpath "/usr/local/openresty/lualib/?.so;;";  #c模块
+
+    include /app/example/example.conf;
+}
+
+2. /app/example/example.conf配置文件如下
+server {
+	listen 80;
+	server_name 80;
+	location /lua {
+		default_type 'text/html';
+		lua_code_cache off; #debug only
+		content_by_lua_file /app/example/lua/test.lua;
+	}
+}
+
+3. lua文件/app/example/lua/test.lua
+ngx.say("hello world");
+
+4. test
+ sbin/nginx  -t
+5. reload
+ sbin/nginx -s reload
+
+
+auto route
+================================================
+/app/example/example.conf
+ lua_shared_dict configs 1m;
+ upstream fetchback1 {
+    server localhost:8080 weight=1 max_fails=3 fail_timeout=3s;
+    keepalive 1024;
+  }
+
+  upstream fetchback2 {
+      server localhost:8081 weight=1 max_fails=3 fail_timeout=3s;
+      keepalive 1024;
+   }
+
+
+server {
+	listen 80;
+	server_name localhost;
+	location /fetch{
+		default_type 'text/html';
+		lua_code_cache off;
+		content_by_lua_file /app/example/lua/fetch.lua;
+	}
+
+  	location /fetchback_source1 {
+    		proxy_pass http://fetchback1/1.html;
+  	}
+
+  	location /fetchback_source2 {
+      		proxy_pass http://fetchback2/1.html;
+  	}
+}
+
+/app/example/lua/fetch.lua
+local configs = ngx.shared.configs;
+configs:set("fetchback",1);
+
+-- route location
+local function getFetchbackUrl()
+    --ngx.say('fetchbackurl')
+    local flag = configs:get("fetchback");
+    if(flag == 1) then
+        return "/fetchback_source1"
+    else
+        return "/fetchback_source2";
+    end
+end
+-- fetchback route
+local function captureLocation(args)
+	local res = ngx.location.capture("/fetchback_source1",{args=args});
+	if res.status ~= ngx.HTTP_OK then
+	    ngx.say("route 2")
+	    res = ngx.location.capture("/fetchback_source2",{args=args});
+	    if res.status ~= ngx.HTTP_OK then
+	    	return nil;
+	    end
+        end
+	return res;
+end
+--local url = getFetchbackUrl()
+--local res = ngx.location.capture("/fetchback_source1",{args = 'name=mark'})
+
+-- demo
+local res = captureLocation('name=mark');
+if res ~= nil then
+	ngx.say(res.body)
+else
+     ngx.say("res is nil")
+end
+
+redis install
+===================================================
+Installation
+Download, extract and compile Redis with:
+$ wget http://download.redis.io/releases/redis-3.2.7.tar.gz
+$ tar xzf redis-3.2.7.tar.gz
+$ cd redis-3.2.7
+$ make
+
+
+start redis
+/usr/local/redis/src/redis-server --port 6379 --daemonize yes
+/usr/local/redis/src/redis-server --port 6380 --daemonize yes
+
+
+
+
+redis shared
+===================================================
+https://github.com/bungle/lua-resty-murmurhash2
+
+add file
+/usr/local/openresty/lualib/resty/murmurhash2.lua
+
+/app/example/lualib/route.lua
+local mmh2 = require "resty.murmurhash2"
+
+-- hash test
+local function hashtest()
+	local hash = mmh2 "test" -- hash contains number 403862830
+	ngx.say("hash result:" .. hash)
+end
+-- redis shard
+local redis = {"redis_01","redis_02"}
+
+local function getLocation(id)
+  local hash = mmh2(id.."");
+  local index = hash % #redis;
+  local index = index + 1; -- begin 0
+  return redis[index];
+end
+
+-- test
+local function test()
+	for i=1,8 do
+		local loc = getLocation(i)
+		ngx.say(loc)
+	end
+end
+
+local route = {
+	getLocation=getLocation,
+	hashtest=hashtest
+}
+return route
+
+
+====================================================
+single get redis
+
+need
+/app/example/lualib/route.lua
+
+/app/example/routetest.lua
+lua_package_path "/app/example/lualib/?.lua;;";
+upstream redis_01 {
+    server 127.0.0.1:6379;
+}
+upstream redis_02 {
+    server 127.0.0.1:6380;
+}
+
+server {
+	listen 80;
+	server_name localhost;
+	default_type 'text/html';
+
+
+	location /redis_01 {
+		internal;
+     		redis2_raw_queries $args $echo_request_body;
+     		redis2_pass redis_01;
+	}
+	location /redis_02 {
+		internal;
+     		redis2_raw_queries $args $echo_request_body;
+     		redis2_pass redis_02;
+	}
+	location /get {
+    	content_by_lua_file /app/example/lua/getredis.lua;
+    }
+	location /testlocation {
+		set_unescape_uri $key $arg_key;
+		content_by_lua_file /app/example/lua/testlocation.lua;
+	}
+}
+
+/app/example/lua/getredis.lua
+--------------
+local route = require('route')
+local parser = require "redis.parser"
+
+ local reqs = {
+     {"set","name","mark"},
+     {"get", "name"}
+ }
+
+ local raw_reqs = {}
+ for i, req in ipairs(reqs) do
+     table.insert(raw_reqs, parser.build_query(req))
+ end
+
+ local location = "/"..route.getLocation(reqs[1][2]).."?";
+ ngx.say(location);
+ local res = ngx.location.capture(location .. #reqs,
+     { body = table.concat(raw_reqs, "") })
+
+ if res.status ~= 200 or not res.body then
+     ngx.log(ngx.ERR, "failed to query redis")
+     ngx.exit(500)
+ end
+
+ local replies = parser.parse_replies(res.body, #reqs)
+ for i, reply in ipairs(replies) do
+     ngx.say(reply[1])
+ end
+
+
+--------------
+test
+http://localhost/get
+
+
+====================================
+location /testlocation {
+		set_unescape_uri $key $arg_key;
+		content_by_lua_file /app/example/lua/testlocation.lua;
+}
+
+
+/app/example/lua/testlocation.lua
+-------------
+local route = require('route')
+local mmh2 = require "resty.murmurhash2"
+local hash = mmh2(ngx.var.key) -- hash contains number 403862830
+ngx.say(ngx.var.key..": hash result:" .. hash)
+
+ngx.say(route.getLocation(ngx.var.key));
+
+
+test
+http://localhost/testlocation?key=name
+
+============================================
+multi get redis
+
+location /multiget{
+		content_by_lua_file /app/example/lua/multiget.lua;
+}
+
+
+/app/example/lua/multiget.lua
+--------------------
+local route = require('route')
+local cjson = require('cjson')
+local parser = require "redis.parser"
+
+ local cmd1 = {{"set","name1","mark1"},{"get","name1"}}
+ local cmd2 = {{"set","name2","mark2"},{"get","name2"}}
+
+ local cmdlist = {}
+ table.insert(cmdlist,cmd1)
+ table.insert(cmdlist,cmd2)
+
+ local reqs = {}
+ for i,req in ipairs(cmdlist) do
+ 	local raw_reqs = {}
+        for j, req2 in ipairs(req) do
+		table.insert(raw_reqs,parser.build_query(req2))
+	end
+	ngx.say(req[1][2].." route ".. route.getLocation(req[1][2]));
+ 	table.insert(reqs,{"/"..route.getLocation(req[1][2]).."?"..#req,{
+		body=table.concat(raw_reqs,"")}});
+ end
+
+ local resps = { ngx.location.capture_multi(reqs) }
+
+ for i, resp in ipairs(resps) do
+ 	if resp.status == 200 then
+		local replies = parser.parse_replies(resp.body,#cmdlist[i])
+		for j,reply in ipairs(replies) do
+			ngx.say(reply[1])
+		end
+	end
+ end
+
+
+
+
+

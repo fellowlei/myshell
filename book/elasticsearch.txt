@@ -1,0 +1,588 @@
+最完整的Elasticsearch 基础教程
+http://blog.csdn.net/cnweike/article/details/33736429
+http://www.yl1001.com/article/1501413876721421.htm
+
+
+http://www.sojson.com/blog/82.html
+
+sw
+jdk-8u111-linux-x64.tar.gz
+elasticsearch-2.3.4.tar.gz
+
+安装
+  Elasticsearch依赖Java
+  java -version
+
+安装elasticsearch
+    类似于jdk的安装
+    下载elasticsearch(以elasticsearch-2.3.4.tar.gz为例)
+    解压下载的elasticsearch文件
+    sudo tar -xzvf elasticsearch-2.3.4.tar.gz -C /usr/local
+    重命名
+    cd /usr/local
+    sudo mv elasticsearch-2.3.4 elasticsearch
+
+    启动Elasticsearch
+    cd /usr/local/elasticsearch
+    bin/elasticsearch
+
+    正如先前提到的，我们可以覆盖集群或者节点的名字。我们可以在启动Elasticsearch的时候通过命令行来指定
+     ./elasticsearch --cluster.name my_cluster_name --node.name my_node_name
+
+    默认情况下，Elasticsearch使用9200来提供对其REST API的访问
+
+    安装head插件
+    cd elasticsearch/bin
+    $ ./plugin install mobz/elasticsearch-head
+    启动 elasticsearch
+    再访问http://localhost:9200/_plugin/head/
+
+    IK分词器安装
+    https://github.com/medcl/elasticsearch-analysis-ik
+
+
+
+探索你的集群
+    查看我们集群的状态
+    curl 'localhost:9200/_cat/health?v'
+
+    获得节集群中的节点列表
+    curl 'localhost:9200/_cat/nodes?v'
+
+    列出所有的索引
+    curl 'localhost:9200/_cat/indices?v'
+
+    创建一个索引
+    curl -XPUT 'localhost:9200/customer?pretty'
+
+    索引并查询一个文档
+    curl -XPUT 'localhost:9200/customer/external/1?pretty' -d '
+        {
+          "name": "John Doe"
+        }'
+
+    刚刚索引的文档取出来
+    curl -XGET 'localhost:9200/customer/external/1?pretty'
+
+
+    删除我们刚刚创建的索引，并再次列出所有的索引
+    curl -XDELETE 'localhost:9200/customer?pretty'
+    curl 'localhost:9200/_cat/indices?v'
+
+
+    索引/替换文档
+    curl -XPUT 'localhost:9200/customer/external/1?pretty' -d '
+            {
+              "name": "Jane Doe"
+            }'
+
+    更新文档
+    curl -XPOST 'localhost:9200/customer/external/1/_update?pretty' -d '
+            {
+              "doc": { "name": "Jane Doe" }
+            }'
+
+    删除文档
+    curl -XDELETE 'localhost:9200/customer/external/2?pretty'
+    能够一次删除符合某个查询条件的多个文档
+    curl -XDELETE 'localhost:9200/customer/external/_query?pretty' -d '
+            {
+              "query": { "match": { "name": "John" } }
+            }'
+
+
+    批处理
+    在一次bulk操作中索引了两个文档
+    curl -XPOST 'localhost:9200/customer/external/_bulk?pretty' -d '
+            {"index":{"_id":"1"}}
+            {"name": "John Doe" }
+            {"index":{"_id":"2"}}
+            {"name": "Jane Doe" }
+
+
+    载入样本数据
+    https://github.com/bly2k/files/blob/master/accounts.zip?raw=true下载这个样本数据集
+    curl -XPOST 'localhost:9200/bank/account/_bulk?pretty' --data-binary @accounts.json
+
+    curl 'localhost:9200/_cat/indices?v'
+    health index pri rep docs.count docs.deleted store.size pri.store.size
+    yellow bank    5   1       1000            0    424.4kb        424.4kb
+
+
+    搜索API
+    返回bank索引中的所有的文档
+    curl 'localhost:9200/bank/_search?q=*&pretty'
+
+    对于这个响应，我们看到了以下的部分：
+    - took —— Elasticsearch执行这个搜索的耗时，以毫秒为单位
+    - timed_out —— 指明这个搜索是否超时
+    - _shards —— 指出多少个分片被搜索了，同时也指出了成功/失败的被搜索的shards的数量
+    - hits —— 搜索结果
+    - hits.total —— 能够匹配我们查询标准的文档的总数目
+    - hits.hits —— 真正的搜索结果数据（默认只显示前10个文档）
+    - _score和max_score —— 现在先忽略这些字段
+
+    使用请求体方法的等价搜索是
+    curl -XPOST 'localhost:9200/bank/_search?pretty' -d '
+            {
+              "query": { "match_all": {} }
+            }'
+
+    下面做了一次match_all并只返回第一个文档
+    curl -XPOST 'localhost:9200/bank/_search?pretty' -d '
+        {
+          "query": { "match_all": {} },
+          "size": 1
+        }'
+
+    做了一次match_all并且返回第11到第20个文档
+    curl -XPOST 'localhost:9200/bank/_search?pretty' -d '
+            {
+              "query": { "match_all": {} },
+              "from": 10,
+              "size": 10
+            }'
+    其中的from参数（0-based）从哪个文档开始，size参数指明从from参数开始，要返回多少个文档。
+    这个特性对于搜索结果分页来说非常有帮助。注意，如果不指定from的值，它默认就是0。
+
+    match_all并且以账户余额降序排序
+    curl -XPOST 'localhost:9200/bank/_search?pretty' -d '
+        {
+          "query": { "match_all": {} },
+          "sort": { "balance": { "order": "desc" } }
+        }'
+
+    不想返回完整的源文档，我们可以指定返回的几个字段
+    怎样返回两个字段account_number和balance
+    curl -XPOST 'localhost:9200/bank/_search?pretty' -d '
+            {
+              "query": { "match_all": {} },
+              "_source": ["account_number", "balance"]
+            }'
+    简单的字段搜索查询
+    返回账户编号为20的文档
+    curl -XPOST 'localhost:9200/bank/_search?pretty' -d '
+            {
+              "query": { "match": { "account_number": 20 } }
+            }'
+
+    返回地址中包含“mill”或者包含“lane”的账户
+    curl -XPOST 'localhost:9200/bank/_search?pretty' -d '
+            {
+              "query": { "match": { "address": "mill lane" } }
+            }'
+
+    match的变体（match_phrase），它会去匹配短语“mill lane”
+    curl -XPOST 'localhost:9200/bank/_search?pretty' -d '
+            {
+              "query": { "match_phrase": { "address": "mill lane" } }
+            }'
+
+
+    布尔查询。布尔查询允许我们利用布尔逻辑将较小的查询组合成较大的查询
+    例子组合了两个match查询，这个组合查询返回包含“mill”和“lane”的所有的账户
+    curl -XPOST 'localhost:9200/bank/_search?pretty' -d '
+       {
+         "query": {
+           "bool": {
+             "must": [
+               { "match": { "address": "mill" } },
+               { "match": { "address": "lane" } }
+             ]
+           }
+         }
+       }'
+
+    例子组合了两个match查询，它返回的是地址中包含“mill”或者“lane”的所有的账户
+    curl -XPOST 'localhost:9200/bank/_search?pretty' -d '
+            {
+              "query": {
+                "bool": {
+                  "should": [
+                    { "match": { "address": "mill" } },
+                    { "match": { "address": "lane" } }
+                  ]
+                }
+              }
+            }'
+    在上面的例子中，bool should语句指明，对于一个文档，查询列表中，只要有一个查询匹配，那么这个文档就被看成是匹配的
+
+    组合了两个查询，它返回地址中既不包含“mill”，同时也不包含“lane”的所有的账户信息
+    curl -XPOST 'localhost:9200/bank/_search?pretty' -d '
+        {
+          "query": {
+            "bool": {
+              "must_not": [
+                { "match": { "address": "mill" } },
+                { "match": { "address": "lane" } }
+              ]
+            }
+          }
+        }'
+    在上面的例子中， bool must_not语句指明，对于一个文档，查询列表中的的所有查询都必须都不为真，这个文档才被认为是匹配的
+
+
+
+    可以将bool查询放到这样的bool语句中来模拟复杂的、多等级的布尔逻辑
+    下面这个例子返回40岁以上并且不生活在ID（daho）的人的账户
+    curl -XPOST 'localhost:9200/bank/_search?pretty' -d '
+            {
+              "query": {
+                "bool": {
+                  "must": [
+                    { "match": { "age": "40" } }
+                  ],
+                  "must_not": [
+                    { "match": { "state": "ID" } }
+                  ]
+                }
+              }
+            }'
+
+    执行过滤器
+     Elasticsearch中的所有的查询都会触发相关度得分的计算
+     过滤器在概念上类似于查询，但是它们有非常快的执行速度
+     - 过滤器不会计算相关度的得分，所以它们在计算上更快一些
+     - 过滤器可以被缓存到内存中，这使得在重复的搜索查询上，其要比相应的查询快出许多。
+
+    例子使用一个被过滤的查询，其返回值是越在20000到30000之间（闭区间）的账户
+    curl -XPOST 'localhost:9200/bank/_search?pretty' -d '
+        {
+          "query": {
+            "filtered": {
+              "query": { "match_all": {} },
+              "filter": {
+                "range": {
+                  "balance": {
+                    "gte": 20000,
+                    "lte": 30000
+                  }
+                }
+              }
+            }
+          }
+        }'
+    分解上面的例子，被过滤的查询包含一个match_all查询（查询部分）和一个过滤器（filter部分）
+     通常情况下，要决定是使用过滤器还是使用查询，你就需要问自己是否需要相关度得分。
+     如果相关度是不重要的，使用过滤器，否则使用查询
+
+
+#############################################################################
+ElasticSearch Java Api
+#############################################################################
+##################[搜索]ElasticSearch Java Api(一) －创建索引##################
+http://blog.csdn.net/napoay/article/details/51707023
+
+ElasticSearch Java API官网文档：https://www.elastic.co/guide/en/elasticsearch/client/java-api/current/java-docs-index.html
+一、生成JSON
+
+创建索引的第一步是要把对象转换为JSON字符串.官网给出了四种创建JSON文档的方法：
+1.1手写方式生成
+
+String json = "{" +
+        "\"user\":\"kimchy\"," +
+        "\"postDate\":\"2013-01-30\"," +
+        "\"message\":\"trying out Elasticsearch\"" +
+    "}";
+
+手写方式很简单，但是要注意日期格式：Date Formate
+1.2使用集合
+
+集合是key:value数据类型，可以代表json结构.
+
+Map<String, Object> json = new HashMap<String, Object>();
+json.put("user","kimchy");
+json.put("postDate",new Date());
+json.put("message","trying out Elasticsearch");
+
+1.3使用JACKSON序列化
+
+ElasticSearch已经使用了jackson，可以直接使用它把javabean转为json.
+// instance a json mapper
+ObjectMapper mapper = new ObjectMapper(); // create once, reuse
+// generate json
+byte[] json = mapper.writeValueAsBytes(yourbeaninstance);
+
+1.4使用ElasticSearch 帮助类
+
+import static org.elasticsearch.common.xcontent.XContentFactory.*;
+
+XContentBuilder builder = jsonBuilder()
+    .startObject()
+        .field("user", "kimchy")
+        .field("postDate", new Date())
+        .field("message", "trying out Elasticsearch")
+    .endObject()
+
+ String json = builder.string();
+
+二、创建索引
+
+下面的例子把json文档写入所以，索引库名为twitter、类型为tweet,id为1：
+
+import static org.elasticsearch.common.xcontent.XContentFactory.*;
+
+IndexResponse response = client.prepareIndex("twitter", "tweet", "1")
+        .setSource(jsonBuilder()
+                    .startObject()
+                        .field("user", "kimchy")
+                        .field("postDate", new Date())
+                        .field("message", "trying out Elasticsearch")
+                    .endObject()
+                  )
+        .get();
+
+
+也可以直接传人JSON字符串：
+
+String json = "{" +
+        "\"user\":\"kimchy\"," +
+        "\"postDate\":\"2013-01-30\"," +
+        "\"message\":\"trying out Elasticsearch\"" +
+    "}";
+
+IndexResponse response = client.prepareIndex("twitter", "tweet")
+        .setSource(json)
+        .get();
+
+可以调用response对象的方法获取返回信息：
+
+// 索引名称
+String _index = response.getIndex();
+// 类型名称
+String _type = response.getType();
+// 文档id
+String _id = response.getId();
+// 版本(if it's the first time you index this document, you will get: 1)
+long _version = response.getVersion();
+// 是否被创建is true if the document is a new one, false if it has been updated
+boolean created = response.isCreated();
+
+更简单的可以直接System.out.println(response)查看返回信息.
+
+
+
+##################ElasticSearch Java Api(二) -检索索引库##################
+http://blog.csdn.net/napoay/article/details/51746916
+
+查询
+一次查询可分为下面四个步骤：
+
+1.创建连接ElasticSearch服务的client.
+索引在ElasticSearch服务器上，进行索引的查询首先要和服务器创建连接，这是第一步。
+
+Client client = TransportClient.builder().build()
+            .addTransportAddress(new InetSocketTransportAddress(InetAddress.getByName("127.0.0.1"), 9300));
+
+2.创建QueryBuilder.
+QueryBuilder可以设置单个字段的查询,也可以设置多个字段的查询.
+e.g.1: 查询title字段中包含hibernate关键字的文档:
+
+QueryBuilder qb1 = QueryBuilders.termQuery("title", "hibernate");
+
+e.g.2: 查询title字段或content字段中包含Git关键字的文档:
+
+QueryBuilder qb2= QueryBuilders.multiMatchQuery("git", "title","content");
+
+3.执行查询
+通过client设置查询的index、type、query.返回一个SearchResponse对象：
+
+SearchResponse response = client.prepareSearch("blog").setTypes("article").setQuery(qb2).execute()
+            .actionGet();
+
+4.处理查询结果
+SearchResponse对象的getHits()方法获取查询结果,返回一个SearchHits的集合，遍历集合获取查询的文档信息：
+
+SearchHits hits = response.getHits();
+
+##################ElasticSearch Java Api(三) -更新索引库##################
+官网文档：https://www.elastic.co/guide/en/elasticsearch/client/java-api/current/java-docs-update.html
+一、UpdateRequest
+
+创建一个UpdateRequest,然后将其发送给client.
+
+UpdateRequest uRequest = new UpdateRequest();
+uRequest.index("blog");
+uRequest.type("article");
+uRequest.id("2");
+uRequest.doc(jsonBuilder().startObject().field("content", "学习目标 掌握java泛型的产生意义ssss").endObject());
+client.update(uRequest).get();
+
+二、prepareUpdate()
+2.1使用脚本方式
+
+首先打开elasticsearch-2.3.3/config/elasticsearch.yml,新增一行：
+
+script.engine.groovy.inline.update: on
+之后重启elasticsearch.
+
+client.prepareUpdate("blog", "article", "1")
+    .setScript(new Script("ctx._source.title = \"git入门\"", ScriptService.ScriptType.INLINE, null, null))
+    .get();
+
+2.2使用doc方式
+
+client.prepareUpdate("blog", "article", "1")
+                .setDoc(jsonBuilder().startObject().field("content", "SVN与Git对比。。。").endObject()).get();
+
+三、updateRequest
+
+UpdateRequest updateRequest = new UpdateRequest("blog", "article", "1")
+                .doc(jsonBuilder().startObject().field("commet", "0").endObject());
+client.update(updateRequest).get();
+
+这种方式可以新增字段。
+四、upsert
+
+如果文档不存在则创建新的索引.
+IndexRequest indexRequest = new IndexRequest("blog", "article", "10").source(jsonBuilder().startObject()
+            .field("title", "Git安装10").field("content", "学习目标 git。。。10").endObject());
+
+UpdateRequest uRequest2 = new UpdateRequest("blog", "article", "10").doc(
+            jsonBuilder().startObject().field("title", "Git安装").field("content", "学习目标 git。。。").endObject())
+            .upsert(indexRequest);
+client.update(uRequest2).get();
+这个例子中，如果blog/article/10存在，那么根据UpdateRequest更新索引；如果不存在，新建indexRequest索引.
+
+
+
+
+##################ElasticSearch Java Api(四) -删除索引##################
+http://blog.csdn.net/napoay/article/details/51781644
+删除可以是删除整个索引库，也可以根据文档id删除索引库下的文档，还可以通过query查询条件删除所有符合条件的数据。
+一、删除整个索引库
+
+下面的例子会删除indexName索引：
+
+DeleteIndexResponse dResponse = client.admin().indices().prepareDelete(indexName)
+                        .execute().actionGet();
+
+可以根据DeleteIndexResponse对象的isAcknowledged()方法判断删除是否成功,返回值为boolean类型.
+如果传人的indexName不存在会出现异常.可以先判断索引是否存在：
+
+IndicesExistsRequest inExistsRequest = new IndicesExistsRequest(indexName);
+
+IndicesExistsResponse inExistsResponse = client.admin().indices()
+                    .exists(inExistsRequest).actionGet();
+
+根据IndicesExistsResponse对象的isExists()方法的boolean返回值可以判断索引库是否存在.
+二、通过ID删除
+
+下面的例子是删除索引名为blog，类型为article，id为1的文档：
+
+DeleteResponse dResponse = client.prepareDelete("blog", "article", "1").execute().actionGet();
+
+通过DeleteResponse对象的isFound()方法，可以得到删除是否成功，返回值为boolean类型.
+三、通过Query删除
+
+elasticsearch-2.3 中和旧版本api不太一样，安装插件：
+
+sudo bin/plugin install delete-by-query
+
+集群有多个节点的情况下，每个节点都需要安装并重启.
+如果想要移除插件，可以执行以下命令：
+
+sudo bin/plugin remove delete-by-query
+
+删除索引名为twitter，类型为tweet，user字段中含有kimchy的所有文档：
+
+DELETE /twitter/tweet/_query?q=user:kimchy
+
+Java api参考Elasticsearch Java Api(六)–DeleteByQuery。
+
+
+
+##########################ElasticSearch同步MySql#################
+ElasticSearch同步MySql
+http://blog.csdn.net/napoay/article/details/51798589
+
+ElasticSearch同步MySQL的插件选择了elasticsearch-jdbc,理由是活跃度高，持续更新,最新版本兼容elasticsearch-2.3.4.
+一、下载
+JDBC importer 2.3.4.0
+下载地址：
+http://xbib.org/repository/org/xbib/elasticsearch/importer/elasticsearch-jdbc/2.3.4.0/elasticsearch-jdbc-2.3.4.0-dist.zip
+
+下载后解压,里面有bin、lib2个目录.
+
+二、mysql配置
+确保mysql能用，在mysql中新建一个test数据库
+mysql>create database test；
+
+新建一张user表
+mysql> create table user(id int(10) Not null,name char(10));
+
+插入几条数据.
+mysql> insert into user values("1","zhangsan");
+mysql> insert into user values("2","LiSi");
+mysql> insert into user values("3","WangWu");
+mysql> insert into user values("4","MaLiu");
+
+查看所有数据：
+
+mysql> select * from user;
++----+----------+
+| id | name     |
++----+----------+
+|  1 | zhangsan |
+|  2 | LiSi     |
+|  3 | WangWu   |
+|  4 | MaLiu    |
++----+----------+
+4 rows in set (0.00 sec)
+
+这样mysql中的数据就准备好了.
+三、导入数据
+
+新建一个odbc_es文件夹,新建mysql_import_es.sh脚本，脚本内容：
+
+bin=/usr/local/elasticsearch/elasticsearch-jdbc-2.3.4.0/bin
+lib=/usr/local/elasticsearch/elasticsearch-jdbc-2.3.4.0/lib
+echo '{
+    "type" : "jdbc",
+    "jdbc" : {
+        "elasticsearch.autodiscover":true,
+        "elasticsearch.cluster":"elasticsearch",
+        "url" : "jdbc:mysql://localhost:3306/test",
+        "user" : "root",
+        "useSSL":"true",
+        "password" : "1",
+        "sql" : "select *, id as _id from user",
+        "elasticsearch" : {
+             "host" : "127.0.0.1",
+             "port" : 9300
+        },
+        "index" : "test",
+        "type" : "user"
+    }
+}' | java \
+       -cp "${lib}/*" \
+       -Dlog4j.configurationFile=${bin}/log4j2.xml \
+       org.xbib.tools.Runner \
+       org.xbib.tools.JDBCImporter
+
+其中bin和lib用了绝对路径.
+添加可执行权限：
+chmod a+x mysql_import_es.sh
+
+执行脚本：
+ ./mysql_import_es.sh
+
+查看导入结果：
+http://localhost:9200/test/user/_search?pretty
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
