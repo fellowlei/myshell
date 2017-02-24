@@ -1,0 +1,41 @@
+maven study
+#sw apache-maven-3.3.9-bin.tar.gz
+#http://maven.apache.org/guides/getting-started/maven-in-five-minutes.html
+
+#get
+wget http://mirrors.cnnic.cn/apache/maven/maven-3/3.3.9/binaries/apache-maven-3.3.9-bin.tar.gz
+
+#install
+tar -xvf apache-maven-3.3.9-bin.tar.gz -C /usr/local/
+cd /usr/local
+mv apache-maven-3.3.9/ maven
+
+#add path
+vim /etc/profile
+export MAVEN_HOME=/usr/local/maven
+export PATH=\$PATH:\$MAVEN_HOME/bin
+
+source /etc/profile
+
+#test
+mvn -version
+
+
+#config /usr/local/maven/conf/settings.xml
+<mirror>  
+    <id>alimaven</id>  
+    <name>aliyun maven</name>  
+    <url>http://maven.aliyun.com/nexus/content/groups/public/</url>  
+    <mirrorOf>central</mirrorOf>          
+</mirror>
+
+#gen web by maven
+mkdir -p /usr/local/maven/tmp
+cd /usr/local/maven/tmp
+mvn archetype:generate -DgroupId=com.mark -DartifactId=myweb -DarchetypeArtifactId=maven-archetype-quickstart -DinteractiveMode=false
+
+#package test
+cd /usr/local/maven/tmp/myweb
+mvn package
+java  -cp target/myweb-1.0-SNAPSHOT.jar com.mark.App 
+
