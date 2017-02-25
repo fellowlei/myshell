@@ -5,8 +5,7 @@ echo "clear"
 weburl=http://mirrors.cnnic.cn/apache/maven/maven-3/3.3.9/binaries/apache-maven-3.3.9-bin.tar.gz
 filename=apache-maven-3.3.9-bin.tar.gz
 
-if [ -d /home/hadoop/sw ] 
-then
+if [ ! -d /home/hadoop/sw ];then
 	mkdir -p /home/hadoop/sw
 fi
 

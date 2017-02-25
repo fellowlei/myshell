@@ -4,6 +4,9 @@ rm -rf /home/hadoop/sw/zookeeper-3.4.9.tar.gz
 rm -rf /usr/local/zookeeper
 echo "clear"
 #get install
+if [ ! -d /home/hadoop/sw ]; then
+	mkdir -p /home/hadoop/sw
+fi
 cd /home/hadoop/sw
 wget http://mirrors.cnnic.cn/apache/zookeeper/stable/zookeeper-3.4.9.tar.gz
 
