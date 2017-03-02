@@ -3,3 +3,6 @@ http://justcoding.iteye.com/blog/1830388
 
 apt-get常用命令
 http://www.cnblogs.com/pswzone/archive/2012/04/09/2438885.html
+
+shell常用分析命令和脚本
+https://github.com/zhwj184/shell-work
