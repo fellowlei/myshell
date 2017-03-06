@@ -6,3 +6,6 @@ http://www.cnblogs.com/pswzone/archive/2012/04/09/2438885.html
 
 shell常用分析命令和脚本
 https://github.com/zhwj184/shell-work
+
+Learn X in Y minutes
+https://learnxinyminutes.com/
