@@ -1,0 +1,12 @@
+http://aiezu.com/article/linux_curl_command.html
+http://www.aiezu.com/system/linux/linux_curl_syntax.html
+
+# -D 保存cookie -H 设置header头  -d 设置form变量
+# -ccookie.txt 只保存cookie
+curl  -Dcookie.txt -H "Host:test.com" -H "User-Agent:Mozilla/5.0 (Windows NT 6.1; WOW64; rv:52.0) Gecko/20100101 Firefox/52.0" -d "name=mark&pass=1" "http://test.com/login.jsp"
+
+# -b 使用cookie
+curl -bcookie.txt -H "Host:test.com" -H "User-Agent:Mozilla/5.0 (Windows NT 6.1; WOW64; rv:52.0) Gecko/20100101 Firefox/52.0" -d "name=mark&pass=1" "http://test.com/manager.jsp?action=update"
+
+# -F 表单方式上传
+curl -F file=@/upload.txt http://test.com/upload.action
